@@ -153,7 +153,8 @@ MonoBehaviour:
   Range: {x: 5, y: 5}
   MaxDist: 0.4
   IterationsPerStep: 100
-  Prefab: {fileID: 8279568220868100718, guid: d00c774c9db005940b9ebdb319d2a379, type: 3}
+  ObstaclePrefab: {fileID: 8279568220868100718, guid: d00c774c9db005940b9ebdb319d2a379,
+    type: 3}
 --- !u!4 &163996182
 Transform:
   m_ObjectHideFlags: 0
