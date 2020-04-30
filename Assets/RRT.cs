@@ -1,55 +1,89 @@
 ﻿using System;
-using System.Collections;
 using System.Collections.Generic;
 using UnityEngine;
 using Random = UnityEngine.Random;
 
 public class RRT : MonoBehaviour
 {
+	/// <summary>
+	/// The rectangle that defines the area where new random points can be spawned
+	/// </summary>
 	public Vector2 Range;
+	/// <summary>
+	/// The maximum distance between the new point and the closest neighbour.
+	/// This dampens the outward growth of the tree.
+	/// </summary>
 	public float MaxDist = 0.4f;
+	/// <summary>
+	/// How many steps we simulate per step. A step is executed every time the space key is pressed.
+	/// </summary>
 	public int IterationsPerStep = 10;
-	public GameObject Prefab;
+	/// <summary>
+	/// The prefab used to spawn obstacles.
+	/// </summary>
+	public GameObject ObstaclePrefab;
 
-	// Start is called before the first frame update
+
 	void Start()
 	{
+		//Add the initial position to the list of tree positions
 		m_positions.Add(transform.position);
 
+		//Spawn 25 obstacles at random location within the given Range.
 		for (int i = 0; i < 25; i++)
 		{
-			var obs = Instantiate(Prefab, new Vector3(Random.Range(-Range.x, Range.x), Random.Range(-Range.y, Range.y), 0), Quaternion.identity);
+			var obs = Instantiate(ObstaclePrefab, new Vector3(Random.Range(-Range.x, Range.x), Random.Range(-Range.y, Range.y), 0), Quaternion.identity);
 			m_obstacles.Add(obs);
 		}
 
 	}
 
-	// Update is called once per frame
+	/// <summary>
+	/// Every time space is pressed we add an <see cref="IterationsPerStep"/> amount of points to the graph.
+	/// </summary>
 	void Update()
 	{
+		//Check if the space key is pressed.
 		if (Input.GetKeyDown(KeyCode.Space))
 		{
+			//Add IterationsPerStep number of points.
 			for (int i = 0; i < IterationsPerStep; i++)
 			{
+				//Get a new random point within the given range.
 				var xRand = RandomState();
+				//Check what existing point is closest to this new random point.
 				var xNearIndex = NearestNeighbour(xRand);
+				//Create a new point that is a maximum of MaxDistance away from its nearest Neighbour.
 				var xNew = NewState(xRand, xNearIndex);
+				//Check if the edge create by xNew and xNear collides with any obstacles.
 				foreach (var obs in m_obstacles)
 				{
+					//If it does xNew will be this intersection.
 					xNew = BoxLineIntersect(obs, m_positions[xNearIndex], xNew);
 				}
 
+				//Add the new node and the edge from nearest neighbour to xNew
 				AddNode(xNew);
 				ConnectEdge(xNearIndex);
 			}
 		}
 	}
 
+	/// <summary>
+	/// Get a new random point within <see cref="Range"/>
+	/// </summary>
+	/// <returns>A new random point.</returns>
 	Vector3 RandomState()
 	{
 		return new Vector3(Random.Range(-Range.x, Range.x), Random.Range(-Range.y, Range.y), 0);
 	}
 
+	/// <summary>
+	/// Find the nearest neighbour in the <see cref="m_positions"/> list.
+	/// </summary>
+	/// <param name="_xRand">The new point we want the nearest neighbour for.</param>
+	/// <remarks>We should probably just return the position directly as the index is never used other than looking up the position.</remarks>
+	/// <returns>The index of the nearest neighbour.</returns>
 	int NearestNeighbour(Vector3 _xRand)
 	{
 		var dist = float.MaxValue;
@@ -68,16 +102,12 @@ public class RRT : MonoBehaviour
 		return index;
 	}
 
-	void AddNode(Vector3 _pos)
-	{
-		m_positions.Add(_pos);
-	}
-
-	void ConnectEdge(int _nnIndex)
-	{
-		m_edges.Add(new Tuple<Vector3, Vector3>(m_positions[m_positions.Count - 1], m_positions[_nnIndex]));
-	}
-
+	/// <summary>
+	/// Return the new point that lies on the line created by the new random point and its nearest neighbour that is a maximum of <see cref="MaxDist"/> away from <paramref name="_nnIndex"/>.
+	/// </summary>
+	/// <param name="_xRand">The newly created random point.</param>
+	/// <param name="_nnIndex">The index of the nearest neighbour.</param>
+	/// <returns>A point in between <paramref name="_xRand"/> and <paramref name="_nnIndex"/> or <paramref name="_xRand"/> if <see cref="MaxDist"/> is not reached.</returns>
 	Vector3 NewState(Vector3 _xRand, int _nnIndex)
 	{
 		var dist = Vector3.Distance(_xRand, m_positions[_nnIndex]);
@@ -91,24 +121,13 @@ public class RRT : MonoBehaviour
 		return _xRand;
 	}
 
-	public void OnDrawGizmos()
-	{
-		if (m_positions.Count < 2)
-		{
-			return;
-		}
-
-		foreach (var pos in m_positions)
-		{
-			Gizmos.DrawSphere(pos, 0.05f);
-		}
-
-		for (int i = 0; i < m_edges.Count; i++)
-		{
-			Gizmos.DrawLine(m_edges[i].Item1, m_edges[i].Item2);
-		}
-	}
-
+	/// <summary>
+	/// Tests if a line intersects a box.
+	/// </summary>
+	/// <param name="_box">The box to test.</param>
+	/// <param name="_start">The start position of the line</param>
+	/// <param name="_end">The end position of the line</param>
+	/// <returns><paramref name="_end"/> if nothing is hit. Otherwise the point just before intersection.</returns>
 	Vector3 BoxLineIntersect(GameObject _box, Vector3 _start, Vector3 _end)
 	{
 		var maxdist = Vector3.Distance(_start, _end);
@@ -123,6 +142,45 @@ public class RRT : MonoBehaviour
 		}
 
 		return _end;
+	}
+
+	/// <summary>
+	/// Add the node to the <see cref="m_positions"/> list.
+	/// </summary>
+	/// <param name="_pos">The position to add.</param>
+	void AddNode(Vector3 _pos)
+	{
+		m_positions.Add(_pos);
+	}
+
+	/// <summary>
+	/// Add a connection from the nearest neighbour to the point added last.
+	/// </summary>
+	/// <param name="_nnIndex">The nearest neighbour to the newly added point.</param>
+	void ConnectEdge(int _nnIndex)
+	{
+		m_edges.Add(new Tuple<Vector3, Vector3>(m_positions[m_positions.Count - 1], m_positions[_nnIndex]));
+	}
+
+	/// <summary>
+	/// Draw all gizmos to visualise what is happening.
+	/// </summary>
+	public void OnDrawGizmos()
+	{
+		foreach (var pos in m_positions)
+		{
+			Gizmos.DrawSphere(pos, 0.05f);
+		}
+
+		if (m_positions.Count < 2)
+		{
+			return;
+		}
+
+		for (int i = 0; i < m_edges.Count; i++)
+		{
+			Gizmos.DrawLine(m_edges[i].Item1, m_edges[i].Item2);
+		}
 	}
 
 	private List<Vector3> m_positions = new List<Vector3>();
