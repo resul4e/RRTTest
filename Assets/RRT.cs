@@ -1,5 +1,6 @@
 ﻿using System;
 using System.Collections.Generic;
+using UnityEditor.SceneManagement;
 using UnityEngine;
 using Random = UnityEngine.Random;
 
@@ -23,9 +24,33 @@ public class RRT : MonoBehaviour
 	/// </summary>
 	public GameObject ObstaclePrefab;
 
+	public GameObject Goal;
 
 	void Start()
 	{
+		Restart();
+	}
+
+	/// <summary>
+	/// Clean up all old data if present and set everything up.
+	/// </summary>
+	void Restart()
+	{
+		//Remove all old obstacles.
+		foreach (var obs in m_obstacles)
+		{
+			Destroy(obs.gameObject);
+		}
+
+		//Clear all lists.
+		m_positions = new List<Vector3>();
+		m_edges = new List<Tuple<Vector3, Vector3>>();
+		m_obstacles = new List<GameObject>(25);
+
+		//position the start and end somewhere
+		transform.position = new Vector3(Random.Range(-Range.x, Range.x), Random.Range(-Range.y, Range.y));
+		Goal.transform.position = new Vector3(Random.Range(-Range.x, Range.x), Random.Range(-Range.y, Range.y));
+
 		//Add the initial position to the list of tree positions
 		m_positions.Add(transform.position);
 
@@ -35,7 +60,6 @@ public class RRT : MonoBehaviour
 			var obs = Instantiate(ObstaclePrefab, new Vector3(Random.Range(-Range.x, Range.x), Random.Range(-Range.y, Range.y), 0), Quaternion.identity);
 			m_obstacles.Add(obs);
 		}
-
 	}
 
 	/// <summary>
@@ -43,6 +67,12 @@ public class RRT : MonoBehaviour
 	/// </summary>
 	void Update()
 	{
+		//If 'R' is pressed Restart the RRT.
+		if (Input.GetKeyDown(KeyCode.R))
+		{
+			Restart();
+		}
+
 		//Check if the space key is pressed.
 		if (Input.GetKeyDown(KeyCode.Space))
 		{
@@ -55,6 +85,9 @@ public class RRT : MonoBehaviour
 				var xNearIndex = NearestNeighbour(xRand);
 				//Create a new point that is a maximum of MaxDistance away from its nearest Neighbour.
 				var xNew = NewState(xRand, xNearIndex);
+
+				var oldNew = xNew;
+
 				//Check if the edge create by xNew and xNear collides with any obstacles.
 				foreach (var obs in m_obstacles)
 				{
@@ -62,9 +95,21 @@ public class RRT : MonoBehaviour
 					xNew = BoxLineIntersect(obs, m_positions[xNearIndex], xNew);
 				}
 
+				//If we collided with something, don't add it to the list.
+				if (oldNew != xNew)
+				{
+					continue;
+				}
+
 				//Add the new node and the edge from nearest neighbour to xNew
 				AddNode(xNew);
 				ConnectEdge(xNearIndex);
+
+				if (CheckGoal())
+				{
+					int ind = NearestNeighbour(Goal.transform.position);
+					ConnectEdge(m_positions[ind], Goal.transform.position);
+				}
 			}
 		}
 	}
@@ -159,7 +204,26 @@ public class RRT : MonoBehaviour
 	/// <param name="_nnIndex">The nearest neighbour to the newly added point.</param>
 	void ConnectEdge(int _nnIndex)
 	{
-		m_edges.Add(new Tuple<Vector3, Vector3>(m_positions[m_positions.Count - 1], m_positions[_nnIndex]));
+		ConnectEdge(m_positions[m_positions.Count - 1], m_positions[_nnIndex]);
+	}
+
+	/// <summary>
+	/// Add a connection between two points.
+	/// </summary>
+	/// <param name="_start">The start of a connection.</param>
+	/// <param name="_end">The end of a connection.</param>
+	void ConnectEdge(Vector3 _start, Vector3 _end)
+	{
+		m_edges.Add(new Tuple<Vector3, Vector3>(_start, _end));
+	}
+
+	/// <summary>
+	/// Check if we are close enough to the goal
+	/// </summary>
+	bool CheckGoal()
+	{
+		int ind = NearestNeighbour(Goal.transform.position);
+		return Vector3.Distance(m_positions[ind], Goal.transform.position) < MaxDist;
 	}
 
 	/// <summary>
@@ -167,6 +231,17 @@ public class RRT : MonoBehaviour
 	/// </summary>
 	public void OnDrawGizmos()
 	{
+		if (m_positions == null)
+		{
+			return;
+		}
+
+		Gizmos.color = Color.blue;
+		Gizmos.DrawSphere(transform.position, 0.1f);
+		Gizmos.color = Color.green;
+		Gizmos.DrawSphere(Goal.transform.position, 0.1f);
+		Gizmos.color = Color.white;
+
 		foreach (var pos in m_positions)
 		{
 			Gizmos.DrawSphere(pos, 0.05f);
@@ -183,7 +258,7 @@ public class RRT : MonoBehaviour
 		}
 	}
 
-	private List<Vector3> m_positions = new List<Vector3>();
-	private List<Tuple<Vector3, Vector3>> m_edges = new List<Tuple<Vector3, Vector3>>();
+	private List<Vector3> m_positions;
+	private List<Tuple<Vector3, Vector3>> m_edges;
 	private List<GameObject> m_obstacles = new List<GameObject>();
 }
