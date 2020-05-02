@@ -1,8 +1,87 @@
 ﻿using System;
 using System.Collections;
 using System.Collections.Generic;
+using System.ComponentModel.Design.Serialization;
 using UnityEngine;
 using Random = UnityEngine.Random;
+
+public enum ExtendStatus
+{
+	Reached,
+	Trapped,
+	Advanced
+}
+
+public class Tree
+{
+	public Node Root;
+
+	public Tree(Vector3 _position)
+	{
+		Root = new Node() {Position = _position};
+		m_nodes.Add(Root);
+	}
+
+	public Node GetNew()
+	{
+		return m_new;
+	}
+
+	public void AddNode(Vector3 _position)
+	{
+		var node = new Node() {Position = _position};
+		AddNode(node);
+	}
+
+	public void AddNode(Node _node)
+	{
+		var nearestNode = NearestNeighbour(_node.Position);
+		nearestNode.Children.Add(_node);
+		_node.Parent = nearestNode;
+		m_nodes.Add(_node);
+		m_new = _node;
+	}
+
+	public Node NearestNeighbour(Vector3 _nodePos)
+	{
+		var dist = float.MaxValue;
+		int index = -1;
+		for (int i = 0; i < m_nodes.Count; i++)
+		{
+			var otherNode = m_nodes[i];
+			var newDist = Vector3.Distance(_nodePos, otherNode.Position);
+			if (newDist < dist)
+			{
+				dist = newDist;
+				index = i;
+			}
+		}
+
+		return m_nodes[index];
+	}
+
+	private Node m_new;
+	private  float m_maxDist;
+	private List<Node> m_nodes = new List<Node>();
+}
+
+public class Node
+{
+	public Vector3 Position;
+	public Node Parent;
+	public List<Node> Children = new List<Node>();
+
+	public void Draw()
+	{
+		Gizmos.DrawSphere(Position, 0.1f);
+
+		foreach (var child in Children)
+		{
+			Gizmos.DrawLine(Position, child.Position);
+			child.Draw();
+		}
+	}
+}
 
 public class RRTConnect : MonoBehaviour
 {
@@ -33,21 +112,20 @@ public class RRTConnect : MonoBehaviour
 
 	void Restart()
 	{
+		m_done = false;
+
 		foreach (var obs in m_obstacles)
 		{
 			Destroy(obs.gameObject);
 		}
-
-		m_positions = new List<Vector3>();
-		m_edges = new List<Tuple<Vector3, Vector3>>();
-		m_obstacles = new List<GameObject>(25);
+		m_obstacles.Clear();
 
 		//position the start and end somewhere
 		transform.position = new Vector3(Random.Range(-Range.x, Range.x), Random.Range(-Range.y, Range.y));
 		Goal.transform.position = new Vector3(Random.Range(-Range.x, Range.x), Random.Range(-Range.y, Range.y));
 
-		//Add the initial position to the list of tree positions
-		m_positions.Add(transform.position);
+		m_start = new Tree(transform.position);
+		m_end = new Tree(Goal.transform.position);
 
 		//Spawn 25 obstacles at random location within the given Range.
 		for (int i = 0; i < 25; i++)
@@ -70,93 +148,79 @@ public class RRTConnect : MonoBehaviour
 		//Check if the space key is pressed.
 		if (Input.GetKeyDown(KeyCode.Space))
 		{
-			//Add IterationsPerStep number of points.
-			for (int i = 0; i < IterationsPerStep; i++)
+			for (int k = 0; k < IterationsPerStep; k++)
 			{
-				//Get a new random point within the given range.
-				var xRand = RandomState();
-				//Check what existing point is closest to this new random point.
-				var xNearIndex = NearestNeighbour(xRand);
-				//Create a new point that is a maximum of MaxDistance away from its nearest Neighbour.
-				var xNew = NewState(xRand, xNearIndex);
+				var qRand = RandomState();
 
-				var oldNew = xNew;
-
-				//Check if the edge create by xNew and xNear collides with any obstacles.
-				foreach (var obs in m_obstacles)
+				if (Extend(m_start, qRand) != ExtendStatus.Trapped)
 				{
-					//If it does xNew will be this intersection.
-					xNew = BoxLineIntersect(obs, m_positions[xNearIndex], xNew);
+					if (Connect(m_start.GetNew().Position) == ExtendStatus.Reached)
+					{
+						m_done = true;
+						break;
+					}
 				}
 
-				if (oldNew != xNew)
-				{
-					continue;
-				}
-
-				//Add the new node and the edge from nearest neighbour to xNew
-				AddNode(xNew);
-				ConnectEdge(xNearIndex);
-
-				if (CheckGoal())
-				{
-					int ind = NearestNeighbour(Goal.transform.position);
-					ConnectEdge(m_positions[ind], Goal.transform.position);
-				}
+				var temp = m_start;
+				m_start = m_end;
+				m_end = temp;
 			}
 		}
 	}
 
-	/// <summary>
-	/// Get a new random point within <see cref="Range"/>
-	/// </summary>
-	/// <returns>A new random point.</returns>
-	Vector3 RandomState()
+	private int m_maxItter = 100;
+	ExtendStatus Connect(Vector3 _q)
 	{
-		return new Vector3(Random.Range(-Range.x, Range.x), Random.Range(-Range.y, Range.y), 0);
-	}
-
-	/// <summary>
-	/// Find the nearest neighbour in the <see cref="m_positions"/> list.
-	/// </summary>
-	/// <param name="_xRand">The new point we want the nearest neighbour for.</param>
-	/// <remarks>We should probably just return the position directly as the index is never used other than looking up the position.</remarks>
-	/// <returns>The index of the nearest neighbour.</returns>
-	int NearestNeighbour(Vector3 _xRand)
-	{
-		var dist = float.MaxValue;
-		int index = -1;
-		for (int i = 0; i < m_positions.Count; i++)
+		int itter = 0;
+		ExtendStatus status = Extend(m_end, _q);
+		while (m_maxItter != itter && status == ExtendStatus.Advanced)
 		{
-			var p = m_positions[i];
-			var newDist = Vector3.Distance(_xRand, p);
-			if (newDist < dist)
-			{
-				dist = newDist;
-				index = i;
-			}
+			status = Extend(m_end, _q);
+			itter++;
 		}
 
-		return index;
+		return status;
 	}
 
-	/// <summary>
-	/// Return the new point that lies on the line created by the new random point and its nearest neighbour that is a maximum of <see cref="MaxDist"/> away from <paramref name="_nnIndex"/>.
-	/// </summary>
-	/// <param name="_xRand">The newly created random point.</param>
-	/// <param name="_nnIndex">The index of the nearest neighbour.</param>
-	/// <returns>A point in between <paramref name="_xRand"/> and <paramref name="_nnIndex"/> or <paramref name="_xRand"/> if <see cref="MaxDist"/> is not reached.</returns>
-	Vector3 NewState(Vector3 _xRand, int _nnIndex)
+	public ExtendStatus Extend(Tree _t, Vector3 _q)
 	{
-		var dist = Vector3.Distance(_xRand, m_positions[_nnIndex]);
+		var nearNode = _t.NearestNeighbour(_q);
+		Vector3 qNew;
+		if (NewConfig(_q, nearNode, out qNew))
+		{
+			_t.AddNode(qNew);
+
+			if (qNew == _q)
+			{
+				return ExtendStatus.Reached;
+			}
+			return ExtendStatus.Advanced;
+		}
+		return ExtendStatus.Trapped;
+	}
+
+	bool NewConfig(Vector3 _q, Node _qNear, out Vector3 _qNew)
+	{
+		var dist = Vector3.Distance(_q, _qNear.Position);
 		if (dist > MaxDist)
 		{
-			var diff = _xRand - m_positions[_nnIndex];
+			var diff = _q - _qNear.Position;
 			var norm = diff.normalized;
-			return m_positions[_nnIndex] + norm * MaxDist;
+			_qNew = _qNear.Position + norm * MaxDist;
+		}
+		else
+		{
+			_qNew = _q;
 		}
 
-		return _xRand;
+		var oldQNew = _qNew;
+		foreach (var obs in m_obstacles)
+		{
+			//If it does xNew will be this intersection.
+			_qNew = BoxLineIntersect(obs, _qNear.Position, _qNew);
+		}
+
+		return _qNew == oldQNew;
 	}
 
 	/// <summary>
@@ -183,32 +247,12 @@ public class RRTConnect : MonoBehaviour
 	}
 
 	/// <summary>
-	/// Add the node to the <see cref="m_positions"/> list.
+	/// Get a new random point within <see cref="Range"/>
 	/// </summary>
-	/// <param name="_pos">The position to add.</param>
-	void AddNode(Vector3 _pos)
+	/// <returns>A new random point.</returns>
+	Vector3 RandomState()
 	{
-		m_positions.Add(_pos);
-	}
-
-	/// <summary>
-	/// Add a connection from the nearest neighbour to the point added last.
-	/// </summary>
-	/// <param name="_nnIndex">The nearest neighbour to the newly added point.</param>
-	void ConnectEdge(int _nnIndex)
-	{
-		ConnectEdge(m_positions[m_positions.Count - 1], m_positions[_nnIndex]);
-	}
-
-	void ConnectEdge(Vector3 _start, Vector3 _end)
-	{
-		m_edges.Add(new Tuple<Vector3, Vector3>(_start, _end));
-	}
-
-	bool CheckGoal()
-	{
-		int ind = NearestNeighbour(Goal.transform.position);
-		return Vector3.Distance(m_positions[ind], Goal.transform.position) < MaxDist;
+		return new Vector3(Random.Range(-Range.x, Range.x), Random.Range(-Range.y, Range.y), 0);
 	}
 
 	/// <summary>
@@ -216,34 +260,53 @@ public class RRTConnect : MonoBehaviour
 	/// </summary>
 	public void OnDrawGizmos()
 	{
-		if (m_positions == null)
+		if (m_start == null)
 		{
 			return;
 		}
 
-		Gizmos.color = Color.blue;
-		Gizmos.DrawSphere(transform.position, 0.1f);
-		Gizmos.color = Color.green;
-		Gizmos.DrawSphere(Goal.transform.position, 0.1f);
-		Gizmos.color = Color.white;
-
-		foreach (var pos in m_positions)
+		if (m_done)
 		{
-			Gizmos.DrawSphere(pos, 0.05f);
+			Gizmos.color = Color.grey;
+			m_start.Root.Draw();
+			m_end.Root.Draw();
+
+			Gizmos.color = Color.blue;
+			var parent = m_start.GetNew();
+			while (parent != null)
+			{
+				var pos = parent.Position;
+				Gizmos.DrawSphere(pos, 0.1f);
+				parent = parent.Parent;
+				if (parent != null)
+				{
+					Gizmos.DrawLine(pos, parent.Position);
+				}
+			}
+
+			parent = m_end.GetNew();
+			while (parent != null)
+			{
+				var pos = parent.Position;
+				Gizmos.DrawSphere(pos, 0.1f);
+				parent = parent.Parent;
+				if (parent != null)
+				{
+					Gizmos.DrawLine(pos, parent.Position);
+				}
+			}
 		}
-
-		if (m_positions.Count < 2)
+		else
 		{
-			return;
-		}
-
-		for (int i = 0; i < m_edges.Count; i++)
-		{
-			Gizmos.DrawLine(m_edges[i].Item1, m_edges[i].Item2);
+			Gizmos.color = Color.green;
+			m_start.Root.Draw();
+			Gizmos.color = Color.red;
+			m_end.Root.Draw();
 		}
 	}
 
-	private List<Vector3> m_positions;
-	private List<Tuple<Vector3, Vector3>> m_edges;
+	private bool m_done = false;
+	private Tree m_start;
+	private Tree m_end;
 	private List<GameObject> m_obstacles = new List<GameObject>();
 }
