@@ -73,13 +73,13 @@ public class Node
 
 	public void Draw()
 	{
-		Gizmos.DrawSphere(Position, 0.1f);
-
 		foreach (var child in Children)
 		{
 			Gizmos.DrawLine(Position, child.Position);
 			child.Draw();
 		}
+
+		Gizmos.DrawSphere(Position, 0.3f);
 	}
 }
 
@@ -102,7 +102,13 @@ public class RRTConnect : MonoBehaviour
 	/// The prefab used to spawn obstacles.
 	/// </summary>
 	public GameObject ObstaclePrefab;
-
+	/// <summary>
+	/// How many obstacles are spawned.
+	/// </summary>
+	public uint ObstacleAmount = 25;
+	/// <summary>
+	/// The <see cref="GameObject"/> that represents the goal which the start node is working towards.
+	/// </summary>
 	public GameObject Goal;
 
 	void Start()
@@ -128,7 +134,7 @@ public class RRTConnect : MonoBehaviour
 		m_end = new Tree(Goal.transform.position);
 
 		//Spawn 25 obstacles at random location within the given Range.
-		for (int i = 0; i < 25; i++)
+		for (int i = 0; i < ObstacleAmount; i++)
 		{
 			var obs = Instantiate(ObstaclePrefab, new Vector3(Random.Range(-Range.x, Range.x), Random.Range(-Range.y, Range.y), 0), Quaternion.identity);
 			m_obstacles.Add(obs);
@@ -309,4 +315,6 @@ public class RRTConnect : MonoBehaviour
 	private Tree m_start;
 	private Tree m_end;
 	private List<GameObject> m_obstacles = new List<GameObject>();
+
+	private Vector3 m_randomPos;
 }

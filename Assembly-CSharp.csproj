@@ -65,6 +65,7 @@
   <ItemGroup>
     <Compile Include="Assets\RRT.cs" />
     <Compile Include="Assets\RRTConnect.cs" />
+    <Compile Include="Assets\RTTConnectSteps.cs" />
     <Reference Include="Unity.Timeline.Editor">
       <HintPath>C:/Programming/UU/MCRWS/RRTTest/Library/ScriptAssemblies/Unity.Timeline.Editor.dll</HintPath>
     </Reference>
